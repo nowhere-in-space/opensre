@@ -59,6 +59,46 @@ def test_build_investigation_system_prompt_includes_alignment_and_tradeoffs() ->
     assert "reversibility" in prompt
 
 
+def test_build_investigation_system_prompt_asks_for_the_command_itself() -> None:
+    """A named command is actionable; a description of one is homework.
+
+    Read-only integrations depend on this: they cannot change anything, so the
+    command they write out is the entire remediation. Investigations against
+    them were ending in prose - "increase storage IOPS", "roll back the
+    deployment" - which leaves the responder to work out the invocation from
+    scratch, on an incident, from a tool that already knew the resource id.
+    """
+    prompt = build_investigation_system_prompt({"alert_source": "grafana"})
+
+    assert "exact command a responder can paste" in prompt
+    assert "read-only" in prompt
+
+
+def test_the_command_rule_forbids_inventing_the_values_in_it() -> None:
+    """Asking for a command invites a made-up one, and a wrong command costs time.
+
+    The safeguard is the point of the rule, not a caveat on it: a responder
+    pasting an invented flag during an incident is worse off than one reading
+    prose.
+    """
+    prompt = build_investigation_system_prompt({"alert_source": "grafana"})
+
+    assert "only from values you actually read" in prompt
+    assert "rather than inventing one" in prompt
+
+
+def test_the_command_rule_names_no_vendor() -> None:
+    """It applies to every platform, so it must not read as one vendor's rule."""
+    prompt = build_investigation_system_prompt({"alert_source": "grafana"})
+
+    line = next(
+        text for text in prompt.splitlines() if "exact command a responder can paste" in text
+    )
+
+    for vendor in ("yandex", "aws", "gcloud", "azure"):
+        assert vendor not in line.lower(), vendor
+
+
 def test_stagnation_nudge_matches_incident_command_output_contract() -> None:
     nudge = STAGNATION_NUDGE.lower()
 

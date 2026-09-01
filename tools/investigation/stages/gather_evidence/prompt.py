@@ -44,6 +44,7 @@ Work through these phases in order and announce each transition, so anyone follo
 **Phase 4 — Mitigation**
 - Write your final diagnosis (see "What to produce at the end").
 - Order remediation by blast radius (smallest first) and reversibility (rollback > config change > code fix > infrastructure change).
+- Give the exact command a responder can paste, not a description of it: `kubectl rollout undo deploy/api -n prod`, not "roll back the deployment". Use the CLI of whichever platform the evidence came from, and name the concrete resource you found. Where a tool is read-only, writing the command out is the whole deliverable - the responder runs it. Build it only from values you actually read - ids, names, parameters that appeared in evidence - and where a value was never observed, say what to substitute rather than inventing one.
 
 ## Follow-up questions
 
