@@ -14,7 +14,12 @@ from integrations.yandex_cloud.availability import (
     yc_available_or_backend,
     yc_credentials,
 )
-from integrations.yandex_cloud.mdb_catalog import ManagedDatabase, engine_choices, resolve_engine
+from integrations.yandex_cloud.mdb_catalog import (
+    MDB_DNS_ZONE,
+    ManagedDatabase,
+    engine_choices,
+    resolve_engine,
+)
 from integrations.yandex_cloud.rest_client import YandexCloudClient
 
 SOURCE = "yandex_cloud"
@@ -84,7 +89,9 @@ def _summarize_operation(operation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _connection_hint(engine: ManagedDatabase, hosts: list[dict[str, Any]]) -> dict[str, Any]:
+def _connection_hint(
+    engine: ManagedDatabase, hosts: list[dict[str, Any]], cluster_id: str
+) -> dict[str, Any]:
     """Return how to reach the data plane, which is where the real answers are."""
     primary = next(
         (host for host in hosts if str(host.get("role", "")).upper() in {"MASTER", "PRIMARY"}),
@@ -104,7 +111,32 @@ def _connection_hint(engine: ManagedDatabase, hosts: list[dict[str, Any]]) -> di
         # Handing over the wrong one of the two produces a connection timeout,
         # which reads exactly like the database being down.
         hint["port_without_tls"] = engine.plaintext_port
+    hint.update(_stable_names(engine, cluster_id))
     return hint
+
+
+#: Said next to ``host`` because the reasonable-looking repair after a failover -
+#: put the new master's name where the old one was - fails again at the next one,
+#: and a tool that hands back a single machine name invites exactly that.
+_HOST_IS_ONE_MACHINE = (
+    "host names one machine, and which machine holds the role changes. "
+    "Configuration meant to outlive an incident should carry rw_host."
+)
+
+
+def _stable_names(engine: ManagedDatabase, cluster_id: str) -> dict[str, str]:
+    """Return the FQDNs that follow a role rather than a machine."""
+    if not cluster_id:
+        return {}
+    names: dict[str, str] = {}
+    if engine.rw_fqdn_resolves_to:
+        names["rw_host"] = f"c-{cluster_id}.rw.{MDB_DNS_ZONE}"
+        names["rw_host_resolves_to"] = engine.rw_fqdn_resolves_to
+        names["host_is_one_machine"] = _HOST_IS_ONE_MACHINE
+    if engine.ro_fqdn_resolves_to:
+        names["ro_host"] = f"c-{cluster_id}.ro.{MDB_DNS_ZONE}"
+        names["ro_host_resolves_to"] = engine.ro_fqdn_resolves_to
+    return names
 
 
 #: How many pages one collection is followed for. A folder with more clusters or
@@ -356,20 +388,25 @@ def list_yc_db_clusters(
         "role and zone, and recent operations. Recent operations are where a "
         "failover, a restart, or a resize shows up — often the thing that "
         "explains an incident. Also returns how to connect the matching "
-        "data-plane integration for querying the database itself."
+        "data-plane integration for querying the database itself, including "
+        "the FQDN that follows the master rather than naming one machine."
     ),
     use_cases=[
         "Checking whether a failover happened around the time of an incident",
         "Finding which host is currently the master after a role change",
         "Spotting a single unhealthy replica in an otherwise healthy cluster",
         "Getting the host and port to point the postgresql or clickhouse integration at",
+        "Finding the endpoint an application config should hold, after a failover moved the master",
     ],
     requires=["cluster_id", "engine"],
     outputs={
         "cluster": "status, health, and environment",
         "hosts": "each host with role, zone, and health",
         "recent_operations": "the most recent operations, newest first",
-        "connect": "which integration, host, and port reach the data plane",
+        "connect": (
+            "which integration, host, and port reach the data plane, and the "
+            "FQDN that follows the master instead of naming one machine"
+        ),
     },
     input_schema={
         "type": "object",
@@ -448,7 +485,7 @@ def get_yc_db_cluster(
         # host read failed" lead an investigation to opposite conclusions.
         "hosts_error": hosts_error,
         "recent_operations": operations,
-        "connect": _connection_hint(resolved, hosts),
+        "connect": _connection_hint(resolved, hosts, cluster_id),
     }
 
 

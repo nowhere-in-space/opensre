@@ -14,6 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+#: Where every managed-database FQDN lives, per-host and special alike.
+MDB_DNS_ZONE: Final[str] = "mdb.yandexcloud.net"
+
 
 @dataclass(frozen=True)
 class ManagedDatabase:
@@ -70,6 +73,28 @@ class ManagedDatabase:
     engine takes no such parameter.
     """
 
+    rw_fqdn_resolves_to: str = ""
+    """What ``c-<cluster_id>.rw.mdb.yandexcloud.net`` points at, if the engine
+    publishes that name at all.
+
+    A per-host FQDN belongs to one machine, and which machine holds a role
+    changes without warning: a failover hands MASTER to a different host, and an
+    application configured with the old name goes on connecting to what is now a
+    replica — its reads keep working and its writes start failing. The special
+    FQDN follows the role instead, so it is what configuration should carry.
+
+    The wording differs per engine because the guarantee does: the current master
+    for PostgreSQL and MySQL, the primary master for MPP Analytics, merely a host
+    that is up for ClickHouse. Empty means Yandex publishes no such name —
+    StoreDoc, Kafka and Sharded PostgreSQL have none. OpenSearch does publish
+    one, and it addresses the Dashboards web interface rather than the data
+    plane, so it is deliberately left out here.
+    """
+
+    ro_fqdn_resolves_to: str = ""
+    """The same for ``c-<cluster_id>.ro.mdb.yandexcloud.net``, which only
+    PostgreSQL and MySQL publish."""
+
 
 ENGINES: Final[tuple[ManagedDatabase, ...]] = (
     # PostgreSQL answers on 6432, not 5432 — connections go through a pooler.
@@ -81,6 +106,8 @@ ENGINES: Final[tuple[ManagedDatabase, ...]] = (
         6432,
         "postgresql",
         log_service_types=("POSTGRESQL", "POOLER", "REPACK"),
+        rw_fqdn_resolves_to="the current master",
+        ro_fqdn_resolves_to="the least-lagging replica",
     ),
     ManagedDatabase(
         "mysql",
@@ -91,6 +118,8 @@ ENGINES: Final[tuple[ManagedDatabase, ...]] = (
         "mysql",
         # Error log first: it is what explains a cluster that is misbehaving.
         log_service_types=("MYSQL_ERROR", "MYSQL_GENERAL", "MYSQL_SLOW_QUERY", "MYSQL_AUDIT"),
+        rw_fqdn_resolves_to="the current master",
+        ro_fqdn_resolves_to="the least-lagging replica",
     ),
     ManagedDatabase(
         "clickhouse",
@@ -102,6 +131,10 @@ ENGINES: Final[tuple[ManagedDatabase, ...]] = (
         plaintext_port=8123,
         # Required here: without it the endpoint refuses the read.
         log_service_types=("CLICKHOUSE", "CLICKHOUSE_KEEPER"),
+        # Not a master - ClickHouse has none. A sharded cluster also answers on
+        # "<shard>.c-<cluster_id>.rw.<zone>", which is a question about one shard
+        # rather than about reaching the cluster.
+        rw_fqdn_resolves_to="a host of the cluster that is up",
     ),
     ManagedDatabase(
         "valkey",
@@ -112,6 +145,7 @@ ENGINES: Final[tuple[ManagedDatabase, ...]] = (
         "redis",
         plaintext_port=6379,
         log_service_types=("REDIS",),
+        rw_fqdn_resolves_to="the current master, in a cluster that is not sharded",
     ),
     ManagedDatabase(
         "storedoc",
@@ -152,6 +186,7 @@ ENGINES: Final[tuple[ManagedDatabase, ...]] = (
         # happens, and a sick segment is what makes a query hang.
         ("master-hosts", "segment-hosts"),
         log_service_types=("GREENPLUM", "GREENPLUM_POOLER", "GREENPLUM_PXF"),
+        rw_fqdn_resolves_to="the primary master",
     ),
     # Sharded PostgreSQL is its own service, not a mode of the one above: its
     # own API prefix, its own cluster type, and a router in front of the shards.

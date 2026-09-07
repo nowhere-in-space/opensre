@@ -539,3 +539,112 @@ class TestNothingIsDroppedOffTheEndOfAPage:
 
         assert [host["name"] for host in result["hosts"]] == ["master-1", "seg-1", "seg-2"]
         assert [host["name"] for host in result["unhealthy_hosts"]] == ["seg-2"]
+
+
+class TestTheEndpointThatSurvivesAFailover:
+    """The hint has to name the FQDN that follows the master, not one machine.
+
+    This is the failure the tests below pin: after a failover the host that was
+    master is a replica, an application still configured with its per-host name
+    keeps reading and stops writing, and the repair that suggests itself - move
+    the new master's name into the config - breaks again at the next failover.
+    A tool that answers with a single machine name is what proposes that repair.
+    """
+
+    def _hint(
+        self, monkeypatch: pytest.MonkeyPatch, engine: str, prefix: str, master: str = "rc1a.mdb"
+    ) -> dict[str, Any]:
+        monkeypatch.setattr(
+            "integrations.yandex_cloud.rest_client.send_request",
+            _responder(
+                {
+                    "/hosts": {"hosts": [{"name": master, "role": "MASTER", "health": "ALIVE"}]},
+                    "/operations": {"operations": []},
+                    f"{prefix}/clusters/c9qexample": {"id": "c9qexample", "status": "RUNNING"},
+                }
+            ),
+        )
+        return get_yc_db_cluster(cluster_id="c9qexample", engine=engine, **_CREDENTIALS)["connect"]
+
+    def test_postgresql_offers_the_master_name_that_moves_with_the_role(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        connect = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1")
+
+        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert connect["rw_host_resolves_to"] == "the current master"
+
+    def test_postgresql_also_offers_the_replica_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Read traffic that does not need the master belongs somewhere else."""
+        connect = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1")
+
+        assert connect["ro_host"] == "c-c9qexample.ro.mdb.yandexcloud.net"
+        assert connect["ro_host_resolves_to"] == "the least-lagging replica"
+
+    def test_the_per_host_name_is_marked_as_one_machine(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both names are returned, so which one to configure has to be said."""
+        connect = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1")
+
+        assert connect["host"] == "rc1a.mdb"
+        assert "rw_host" in connect["host_is_one_machine"]
+
+    def test_the_stable_name_does_not_follow_whichever_host_is_master(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The point of the name: a failover changes ``host`` and not ``rw_host``."""
+        before = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1", "rc1a.mdb")
+        after = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1", "rc1b.mdb")
+
+        assert before["host"] != after["host"]
+        assert before["rw_host"] == after["rw_host"]
+
+    def test_mpp_analytics_has_a_master_name_and_no_replica_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Greenplum publishes the master FQDN only; claiming a replica one would 404."""
+        connect = self._hint(monkeypatch, "greenplum", "/managed-greenplum/v1")
+
+        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert connect["rw_host_resolves_to"] == "the primary master"
+        assert "ro_host" not in connect
+
+    def test_clickhouse_is_not_described_as_having_a_master(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The same FQDN shape means something else here, and saying 'master' would mislead."""
+        connect = self._hint(monkeypatch, "clickhouse", "/managed-clickhouse/v1")
+
+        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert "master" not in connect["rw_host_resolves_to"]
+
+    @pytest.mark.parametrize(
+        ("engine", "prefix"),
+        [
+            ("storedoc", "/managed-mongodb/v1"),
+            ("kafka", "/managed-kafka/v1"),
+            ("spqr", "/managed-spqr/v1"),
+            ("opensearch", "/managed-opensearch/v1"),
+        ],
+    )
+    def test_an_engine_without_the_name_is_not_given_one(
+        self, engine: str, prefix: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A confidently wrong hostname costs more than a missing one.
+
+        OpenSearch is in this list on purpose: it publishes the same FQDN shape,
+        and it addresses the Dashboards web interface rather than the data plane.
+        """
+        connect = self._hint(monkeypatch, engine, prefix)
+
+        assert "rw_host" not in connect
+        assert "host_is_one_machine" not in connect
+
+    def test_no_engine_claims_a_replica_name_without_a_master_one(self) -> None:
+        """The catalog is written by hand; ``ro`` without ``rw`` would be a typo."""
+        from integrations.yandex_cloud.mdb_catalog import ENGINES
+
+        for engine in ENGINES:
+            if engine.ro_fqdn_resolves_to:
+                assert engine.rw_fqdn_resolves_to, engine.key
