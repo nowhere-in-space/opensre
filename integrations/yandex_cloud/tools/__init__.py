@@ -9,6 +9,10 @@ from integrations.yandex_cloud.tools.yc_instances_tool import (
     get_yc_instance_diagnostics,
     list_yc_instances,
 )
+from integrations.yandex_cloud.tools.yc_k8s_tool import (
+    get_yc_k8s_cluster,
+    list_yc_k8s_clusters,
+)
 from integrations.yandex_cloud.tools.yc_lb_tool import get_yc_lb_health
 from integrations.yandex_cloud.tools.yc_logs_tool import list_yc_log_groups, read_yc_logs
 from integrations.yandex_cloud.tools.yc_metrics_tool import list_yc_metrics, query_yc_metrics
@@ -19,9 +23,11 @@ __all__ = [
     "find_yc_api",
     "get_yc_db_cluster",
     "get_yc_instance_diagnostics",
+    "get_yc_k8s_cluster",
     "get_yc_lb_health",
     "list_yc_db_clusters",
     "list_yc_instances",
+    "list_yc_k8s_clusters",
     "list_yc_log_groups",
     "list_yc_metrics",
     "query_yc_metrics",

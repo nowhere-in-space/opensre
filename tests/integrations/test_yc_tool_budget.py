@@ -23,6 +23,8 @@ class TestRegistration:
             "list_yc_db_clusters",
             "get_yc_db_cluster",
             "read_yc_db_logs",
+            "list_yc_k8s_clusters",
+            "get_yc_k8s_cluster",
         ],
     )
     def test_the_tool_is_discoverable(self, name: str) -> None:
@@ -52,6 +54,8 @@ class TestRegistration:
             "list_yc_db_clusters",
             "get_yc_db_cluster",
             "read_yc_db_logs",
+            "list_yc_k8s_clusters",
+            "get_yc_k8s_cluster",
         }
         registered = get_registered_tool_map()
         yc_tools = [name for name in registered if name in family]

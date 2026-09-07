@@ -25,17 +25,15 @@ MAX_ATTACHED_CHARS = 2400
 GUIDED_TOOLS = frozenset({"find_yc_api", "execute_yc_operation"})
 #: Tools named in the guidance that this tree does not ship would hand the model
 #: a next action it cannot take.
-LATER_FAMILY_TOOLS = (
-    "read_yc_audit_events",
-    "list_yc_k8s_clusters",
-    "get_yc_k8s_cluster",
-)
+LATER_FAMILY_TOOLS = ("read_yc_audit_events",)
 #: Tools the guidance may name because this tree does ship them. Kept explicit
 #: so that adding a family means moving a name across rather than deleting one.
 SHIPPED_FAMILY_TOOLS = (
     "list_yc_db_clusters",
     "get_yc_db_cluster",
     "read_yc_db_logs",
+    "list_yc_k8s_clusters",
+    "get_yc_k8s_cluster",
 )
 
 

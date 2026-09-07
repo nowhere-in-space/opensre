@@ -25,8 +25,8 @@ capacity when the registry was refusing the pull. `Pending` with no events about
 resources is an image or volume problem, not a scheduling one.
 
 **A pod is not a Yandex Cloud resource.** The Yandex Cloud API knows the
-Kubernetes *cluster* — version, health, node groups, read with
-`execute_yc_operation` on `/managed-kubernetes/` — and nothing about what runs
+Kubernetes *cluster* — health, version, node groups and nodes, read with
+`list_yc_k8s_clusters` and `get_yc_k8s_cluster` — and nothing about what runs
 inside it. Neither `execute_yc_operation` nor `find_yc_api` can reach a pod, an
 event or a container log, and no `/managed-kubernetes/` path returns one. Read
 those with `kubernetes_list_pods`, `kubernetes_get_events`,
@@ -62,7 +62,7 @@ tell the user a piece of it "is not configured":
 | Audit events, who changed what | not readable yet — audit trails write to a sink |
 | VMs, disks, images, instance groups | `list_yc_instances`, `get_yc_instance_diagnostics`; otherwise `execute_yc_operation` |
 | Load balancer target health | `get_yc_lb_health` |
-| Kubernetes **clusters and node groups** | `execute_yc_operation` on `/managed-kubernetes/` |
+| Kubernetes **clusters, node groups, nodes** | `list_yc_k8s_clusters`, `get_yc_k8s_cluster` |
 | Kubernetes **pods, events, pod logs, nodes** | `kubernetes_list_pods`, `kubernetes_get_events`, `kubernetes_get_pod_logs`, `kubernetes_list_nodes` |
 | Managed PostgreSQL/MySQL/ClickHouse/Valkey/StoreDoc/Kafka/OpenSearch | `list_yc_db_clusters`, `get_yc_db_cluster` |
 | Functions, containers, triggers, API gateways | `execute_yc_operation` |
@@ -113,16 +113,17 @@ API server:
 | Which pods exist, and their state | `kubernetes_list_pods` |
 | Why a pod is not starting | `kubernetes_describe_pod`, `kubernetes_get_events` |
 | What a container logged | `kubernetes_get_pod_logs` |
-| Node pressure, NotReady nodes | `kubernetes_list_nodes` |
+| Node pressure, NotReady nodes | `kubernetes_list_nodes`, or `get_yc_k8s_cluster` without cluster access |
 | Deployments, services, statefulsets, ingresses | `kubernetes_list_deployments` and friends |
 | Anything else in the cluster | `kubernetes_get_resource` |
 
 So an incident in a Managed Kubernetes cluster is usually two reads, in this
 order:
 
-1. `execute_yc_operation` on `/managed-kubernetes/v1/clusters` — is the control
-   plane itself healthy? A degraded master explains everything below it, and
-   nothing else needs checking.
+1. `get_yc_k8s_cluster` — is the control plane healthy, is a node group
+   mid-update, is a node's instance failing to start? A degraded master
+   explains everything below it, and a node that never joined explains pods
+   that never scheduled. Neither is visible from inside the cluster.
 2. `kubernetes_list_pods` and `kubernetes_get_events` — what is actually wrong
    with the workload.
 
