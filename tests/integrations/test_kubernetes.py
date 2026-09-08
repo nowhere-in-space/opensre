@@ -81,6 +81,28 @@ def test_classify_returns_none_when_kubeconfig_missing() -> None:
     assert key is None
 
 
+def test_classify_accepts_the_null_the_store_writes_for_an_unused_field() -> None:
+    """A path-only setup saves ``kubeconfig`` as null, and that has to survive.
+
+    The local store writes an unused credential as ``null`` rather than leaving
+    it out, so this is the shape every file-path setup reads back. Rejecting it
+    is invisible at setup time - the wizard probes the cluster, reports the
+    namespace as reachable, and saves - and shows up one command later as
+    "saved in the local store, but they did not resolve into a usable runtime
+    config", which reads as a credentials problem rather than a parsing one.
+    """
+    cfg, key = classify(
+        {"kubeconfig": None, "kubeconfig_path": "/root/.kube/config", "namespace": "todo"},
+        "rec-4",
+    )
+
+    assert key == "kubernetes"
+    assert cfg is not None
+    assert cfg.kubeconfig == ""
+    assert cfg.kubeconfig_path == "/root/.kube/config"
+    assert cfg.is_configured is True
+
+
 def test_classify_preserves_context_and_namespace() -> None:
     cfg, key = classify(
         {"kubeconfig": _MINIMAL_KUBECONFIG, "context": "staging", "namespace": "prod"},

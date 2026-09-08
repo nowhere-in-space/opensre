@@ -1223,8 +1223,14 @@ class KubernetesIntegrationConfig(StrictConfigModel):
     namespace: str = "default"
     integration_id: str = ""
 
+    # Every string field, ``kubeconfig`` included. The local store writes an
+    # unused credential as ``null`` rather than omitting it, so a config saved
+    # by the file-path mode of `integrations setup` comes back with
+    # ``kubeconfig: None`` - which the strict model rejects. Setup then passes,
+    # its probe reports the namespace as reachable, and the very next read
+    # reports the integration as saved but unusable.
     _normalize_strs = field_validator(
-        "kubeconfig_path", "context", "integration_id", mode="before"
+        "kubeconfig", "kubeconfig_path", "context", "integration_id", mode="before"
     )(normalize_str())
     _normalize_namespace = field_validator("namespace", mode="before")(
         normalize_with_default("default")
