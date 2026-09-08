@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
@@ -11,6 +12,51 @@ from integrations.config_models import KubernetesIntegrationConfig
 from integrations.kubernetes.client import _RESOURCE_DISPATCH, KubernetesClient
 
 _RESOURCE_TYPE_ENUM: list[str] = sorted(_RESOURCE_DISPATCH.keys())
+
+
+#: How many distinct label pairs come back when a selector matched nothing. The
+#: point is to show the shape of what is there, not to hand over an inventory.
+_LABELS_SHOWN = 20
+
+#: Said out loud because the mistake that leads here is a specific one: a pod
+#: named ``todo-backend-646fb45d55-6vw74`` does not carry ``app=todo-backend``.
+_SELECTOR_NOTE = (
+    "The selector matched none of them. Retry with one of labels_present, or "
+    "with no selector at all - a name is not a label."
+)
+
+
+def _report_on_an_empty_filter(
+    reread: Callable[..., dict[str, Any]],
+    *,
+    namespace: str,
+    label_selector: str,
+    limit: int,
+    key: str,
+) -> dict[str, Any]:
+    """Say whether the filter or the namespace is what came back empty.
+
+    The two are indistinguishable from outside - both are an empty list - and
+    they lead to opposite conclusions: one means the workload is gone, the other
+    means the selector was wrong. Answering with the empty list alone has been
+    read as "this deployment has no pods" while four of them were running.
+
+    Costs one extra read, and only on the empty-with-a-selector path.
+    """
+    unfiltered = reread(namespace=namespace, label_selector="", limit=limit)
+    if not unfiltered.get("success"):
+        # The re-read failed, so nothing can be claimed about the namespace.
+        # Naming the selector is still worth more than an unexplained empty list.
+        return {"label_selector": label_selector}
+    items = unfiltered.get(key) or []
+    report: dict[str, Any] = {"label_selector": label_selector, f"{key}_in_namespace": len(items)}
+    if not items:
+        return report
+    labels = sorted({f"{k}={v}" for item in items for k, v in (item.get("labels") or {}).items()})
+    report["selector_matched_nothing"] = True
+    report["labels_present"] = labels[:_LABELS_SHOWN]
+    report["note"] = _SELECTOR_NOTE
+    return report
 
 
 def _make_client(sources: dict[str, Any]) -> KubernetesClient | None:
@@ -98,6 +144,8 @@ class KubernetesListPodsTool(BaseTool):
     outputs = {
         "pods": "List of pods with phase, container statuses, and node assignment",
         "total": "Total number of pods returned",
+        "selector_matched_nothing": "Present when a label selector filtered every pod out; "
+        "labels_present then lists the labels the namespace does carry",
     }
 
     def is_available(self, sources: dict[str, Any]) -> bool:
@@ -144,13 +192,24 @@ class KubernetesListPodsTool(BaseTool):
                 return tool_unavailable(
                     "kubernetes", result.get("error", "unknown error"), pods=[], total=0
                 )
-            return {
+            payload: dict[str, Any] = {
                 "source": "kubernetes",
                 "available": True,
                 "namespace": namespace,
                 "pods": result["pods"],
                 "total": result["total"],
             }
+            if label_selector and not result["pods"]:
+                payload.update(
+                    _report_on_an_empty_filter(
+                        client.list_pods,
+                        namespace=namespace,
+                        label_selector=label_selector,
+                        limit=limit,
+                        key="pods",
+                    )
+                )
+            return payload
 
 
 kubernetes_list_pods = KubernetesListPodsTool()
@@ -683,6 +742,8 @@ class KubernetesListServicesTool(BaseTool):
     outputs = {
         "services": "List of services with type, clusterIP, ports, and selector",
         "total": "Total number of services returned",
+        "selector_matched_nothing": "Present when a label selector filtered every service out; "
+        "labels_present then lists the labels the namespace does carry",
     }
 
     def is_available(self, sources: dict[str, Any]) -> bool:
@@ -729,13 +790,24 @@ class KubernetesListServicesTool(BaseTool):
                 return tool_unavailable(
                     "kubernetes", result.get("error", "unknown error"), services=[], total=0
                 )
-            return {
+            payload: dict[str, Any] = {
                 "source": "kubernetes",
                 "available": True,
                 "namespace": namespace,
                 "services": result["services"],
                 "total": result["total"],
             }
+            if label_selector and not result["services"]:
+                payload.update(
+                    _report_on_an_empty_filter(
+                        client.list_services,
+                        namespace=namespace,
+                        label_selector=label_selector,
+                        limit=limit,
+                        key="services",
+                    )
+                )
+            return payload
 
 
 kubernetes_list_services = KubernetesListServicesTool()

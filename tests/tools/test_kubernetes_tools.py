@@ -864,3 +864,128 @@ def test_get_resource_run_returns_unavailable_when_no_client() -> None:
     tool = KubernetesGetResourceTool()
     result = tool.run(kubeconfig="", resource_type="deployment", name="api")
     assert result["available"] is False
+
+
+# ---------------------------------------------------------------------------
+# An empty filtered list has to say which of the two emptinesses it is
+# ---------------------------------------------------------------------------
+
+
+def _labelled_pod(name: str) -> MagicMock:
+    pod = _make_mock_pod(name)
+    pod.metadata.labels = {
+        "app.kubernetes.io/name": "backend",
+        "app.kubernetes.io/instance": "todo",
+    }
+    return pod
+
+
+def _pods_only_without_a_selector(**kwargs: Any) -> MagicMock:
+    """Answer an unfiltered read with two pods and any filtered read with none."""
+    listing = MagicMock()
+    if kwargs.get("label_selector"):
+        listing.items = []
+    else:
+        listing.items = [_labelled_pod("todo-backend-6vw74"), _labelled_pod("todo-backend-kls78")]
+    return listing
+
+
+def _nothing_at_all(**_kwargs: Any) -> MagicMock:
+    listing = MagicMock()
+    listing.items = []
+    return listing
+
+
+def test_an_empty_filtered_pod_list_names_the_selector_as_the_reason() -> None:
+    """A selector guessed from a pod name matches nothing while the pods run.
+
+    Answering with the bare empty list has been read as "this deployment has no
+    pods" during a live incident, with four of them Running at the time.
+    """
+    mock_core = MagicMock()
+    mock_core.list_namespaced_pod.side_effect = _pods_only_without_a_selector
+
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ):
+        result = KubernetesListPodsTool().run(
+            kubeconfig=_MINIMAL_KUBECONFIG, namespace="todo", label_selector="app=todo-backend"
+        )
+
+    assert result["pods"] == []
+    assert result["selector_matched_nothing"] is True
+    assert result["label_selector"] == "app=todo-backend"
+    assert result["pods_in_namespace"] == 2
+    assert "app.kubernetes.io/name=backend" in result["labels_present"]
+
+
+def test_an_empty_namespace_is_not_blamed_on_the_selector() -> None:
+    """Nothing there is a different answer from nothing matching, and stays one."""
+    mock_core = MagicMock()
+    mock_core.list_namespaced_pod.side_effect = _nothing_at_all
+
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ):
+        result = KubernetesListPodsTool().run(
+            kubeconfig=_MINIMAL_KUBECONFIG, namespace="todo", label_selector="app=todo-backend"
+        )
+
+    assert result["pods_in_namespace"] == 0
+    assert "selector_matched_nothing" not in result
+    assert "labels_present" not in result
+
+
+def test_an_unfiltered_empty_list_costs_no_second_read() -> None:
+    """Without a selector there is nothing to explain, and no reason to re-read."""
+    mock_core = MagicMock()
+    mock_core.list_namespaced_pod.side_effect = _nothing_at_all
+
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ):
+        result = KubernetesListPodsTool().run(kubeconfig=_MINIMAL_KUBECONFIG, namespace="todo")
+
+    assert mock_core.list_namespaced_pod.call_count == 1
+    assert "label_selector" not in result
+    assert "selector_matched_nothing" not in result
+
+
+def _services_only_without_a_selector(**kwargs: Any) -> MagicMock:
+    listing = MagicMock()
+    if kwargs.get("label_selector"):
+        listing.items = []
+        return listing
+    service = MagicMock()
+    service.metadata.name = "todo-backend"
+    service.metadata.namespace = "todo"
+    service.metadata.labels = {"app.kubernetes.io/name": "backend"}
+    service.spec.type = "ClusterIP"
+    service.spec.cluster_ip = "10.0.0.1"
+    service.spec.external_i_ps = []
+    service.spec.ports = []
+    service.spec.selector = {"app.kubernetes.io/name": "backend"}
+    service.status.load_balancer.ingress = []
+    listing.items = [service]
+    return listing
+
+
+def test_an_empty_filtered_service_list_names_the_selector_too() -> None:
+    """Same trap, same answer: services are the other tool that takes a selector."""
+    mock_core = MagicMock()
+    mock_core.list_namespaced_service.side_effect = _services_only_without_a_selector
+
+    with patch(
+        "integrations.kubernetes.tools._make_client",
+        return_value=_make_client_with_core(mock_core),
+    ):
+        result = KubernetesListServicesTool().run(
+            kubeconfig=_MINIMAL_KUBECONFIG, namespace="todo", label_selector="app=todo-backend"
+        )
+
+    assert result["services"] == []
+    assert result["selector_matched_nothing"] is True
+    assert result["services_in_namespace"] == 1
