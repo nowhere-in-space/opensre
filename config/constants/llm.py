@@ -18,6 +18,11 @@ from typing import Final
 
 LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
 
+#: Seconds one agent request may take before it is abandoned and retried. The
+#: built-in ceiling suits a hosted vendor API; a regional or self-hosted
+#: endpoint serving a large model needs a larger one.
+AGENT_TIMEOUT_ENV: Final[str] = "OPENSRE_AGENT_TIMEOUT_SEC"
+
 #: Legacy key from the removed OAuth auth method. API keys are the only LLM
 #: auth path now; env sync strips this from existing ``.env`` files.
 LLM_AUTH_METHOD_ENV: Final[str] = "LLM_AUTH_METHOD"

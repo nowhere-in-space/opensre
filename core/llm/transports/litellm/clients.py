@@ -17,8 +17,8 @@ from pydantic import BaseModel  # noqa: E402
 
 from core.context_budget import strip_internal_message_markers  # noqa: E402
 from core.llm.shared.openai_chat_completions import (  # noqa: E402
-    AGENT_CLIENT_TIMEOUT_SEC,
     LLM_CLIENT_TIMEOUT_SEC,
+    agent_client_timeout_sec,
     agent_response_from_completion,
     build_assistant_message,
     build_tool_result_message,
@@ -110,7 +110,7 @@ class LiteLLMAgentClient:
             "model": self._litellm_model,
             "messages": prepend_system_message(strip_internal_message_markers(messages), system),
             "max_tokens": self._max_tokens,
-            "timeout": AGENT_CLIENT_TIMEOUT_SEC,
+            "timeout": agent_client_timeout_sec(),
         }
         api_key = self._api_key()
         if api_key is not None:

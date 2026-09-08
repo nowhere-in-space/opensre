@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable, Iterator
 from http import HTTPStatus
 from typing import Any
 
+from config.constants.llm import AGENT_TIMEOUT_ENV
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
     maybe_raise_credit_exhausted,
@@ -19,8 +21,34 @@ from core.llm.types import AgentLLMResponse, LLMResponse, ToolCall
 _RETRY_INITIAL_BACKOFF_SEC = 1.0
 _RETRY_MAX_ATTEMPTS = 3
 
-AGENT_CLIENT_TIMEOUT_SEC: float = 90.0
+#: What one agent request gets before it is abandoned. Ninety seconds fits a
+#: hosted vendor API and is wrong for a regional or self-hosted endpoint serving
+#: a large model, where the first call - the one carrying every tool schema -
+#: legitimately runs longer. Cutting it off there does not make it faster: each
+#: retry redoes the same work and meets the same ceiling, so a turn that would
+#: have answered in two minutes instead fails after four and a half with
+#: nothing to show.
+DEFAULT_AGENT_CLIENT_TIMEOUT_SEC: float = 90.0
 LLM_CLIENT_TIMEOUT_SEC: float = 60.0
+
+
+def agent_client_timeout_sec() -> float:
+    """Return the per-request ceiling for one agent call.
+
+    Read per call rather than bound at import time: the env file is loaded once
+    the process is already running, so a value captured at import would be the
+    default no matter what the operator configured. A value that is not a
+    positive number is ignored rather than fatal - a typo in an env file should
+    not stop the agent from answering.
+    """
+    raw = os.getenv(AGENT_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_AGENT_CLIENT_TIMEOUT_SEC
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return DEFAULT_AGENT_CLIENT_TIMEOUT_SEC
+    return seconds if seconds > 0 else DEFAULT_AGENT_CLIENT_TIMEOUT_SEC
 
 
 def get_attr_or_item(value: Any, key: str, default: Any = None) -> Any:

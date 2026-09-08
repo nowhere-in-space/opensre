@@ -184,6 +184,7 @@ EXPORTS: dict[str, str] = {
     "AZURE_OPENAI_API_VERSION_ENV": "llm",
     "AZURE_OPENAI_BASE_URL_ENV": "llm",
     "LLM_AUTH_METHOD_ENV": "llm",
+    "AGENT_TIMEOUT_ENV": "llm",
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
     # mariadb

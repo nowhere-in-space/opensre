@@ -21,7 +21,7 @@ from core.llm.shared.llm_retry import (
 from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
     _RETRY_MAX_ATTEMPTS,
-    AGENT_CLIENT_TIMEOUT_SEC,
+    agent_client_timeout_sec,
 )
 from core.llm.shared.openai_chat_completions import (
     build_assistant_message as build_openai_compat_assistant_message,
@@ -104,7 +104,7 @@ class AnthropicAgentClient:
             api_key = resolver(api_key_env)
             client_kwargs: dict[str, Any] = {
                 "api_key": api_key,
-                "timeout": AGENT_CLIENT_TIMEOUT_SEC,
+                "timeout": agent_client_timeout_sec(),
             }
             if base_url:
                 client_kwargs["base_url"] = base_url
@@ -363,7 +363,7 @@ class BedrockAgentClient(AnthropicAgentClient):
 
         bedrock_client = AnthropicBedrock(
             aws_region=region,
-            timeout=AGENT_CLIENT_TIMEOUT_SEC,
+            timeout=agent_client_timeout_sec(),
         )
         super().__init__(model=model, max_tokens=max_tokens, client=bedrock_client)
 
@@ -558,7 +558,9 @@ class OpenAIAgentClient:
 
         resolver = credential_resolver or resolve_env_credential
         api_key = resolver(api_key_env) or api_key_default
-        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=AGENT_CLIENT_TIMEOUT_SEC)
+        self._client = OpenAI(
+            api_key=api_key, base_url=base_url, timeout=agent_client_timeout_sec()
+        )
         self._model = model
         self._max_tokens = max_tokens
         self._api_key_env = api_key_env
