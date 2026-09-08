@@ -24,6 +24,7 @@ import httpx
 
 from config.constants import get_store_path
 from config.constants.posthog import POSTHOG_CAPTURE_API_KEY, POSTHOG_HOST
+from config.constants.vendor_services import VENDOR_SERVICES_ENABLED
 from config.version import get_opensre_version
 from infrastructure.analytics.analytics_runtime import (
     detect_analytics_runtime,
@@ -106,6 +107,11 @@ _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.valu
 
 
 def _is_opted_out() -> bool:
+    # Off by construction in this build, before any env var is consulted: the
+    # prompt-log sink rides on this same provider, so prompts and responses -
+    # host names, cluster ids, log excerpts - would leave the machine too.
+    if not VENDOR_SERVICES_ENABLED:
+        return True
     return (
         os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
         or os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"

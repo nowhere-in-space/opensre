@@ -117,7 +117,9 @@ def test_main_treats_onboard_abort_as_clean_cancel(
     assert exit_code == 0
 
 
-def test_main_allows_update_when_sentry_sdk_missing(monkeypatch, capsys) -> None:
+def test_main_allows_update_when_sentry_sdk_missing(
+    monkeypatch, capsys, vendor_services_enabled: None
+) -> None:
     monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
     monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
     monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
@@ -340,7 +342,7 @@ def test_main_debug_sentry_exits_nonzero_when_flush_fails(monkeypatch, capsys) -
 
 
 def test_main_emits_first_run_install_before_cli_invoked(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys, vendor_services_enabled: None
 ) -> None:
     # This test validates analytics event ordering only; avoid real Sentry init
     # side effects (e.g. sdk integration hooks) that are unrelated to the

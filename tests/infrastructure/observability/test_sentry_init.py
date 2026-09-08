@@ -983,3 +983,8 @@ def test_build_sentry_integrations_includes_logging_by_default(monkeypatch) -> N
     assert "LoggingIntegration" in integration_names
     assert "AsyncioIntegration" in integration_names
     assert "HttpxIntegration" in integration_names
+
+
+@pytest.fixture(autouse=True)
+def _vendor_services_on(vendor_services_enabled: None) -> None:
+    """This suite covers paths this build switches off; see tests/conftest.py."""

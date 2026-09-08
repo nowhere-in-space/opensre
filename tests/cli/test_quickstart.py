@@ -173,7 +173,14 @@ def test_quickstart_update_help(cli_sandbox: CliSandbox) -> None:
     assert "--check" in result.stdout
 
 
-def test_quickstart_update_check_runs(cli_sandbox: CliSandbox, release_api_url: str) -> None:
+def test_quickstart_update_check_says_this_build_does_not_check(
+    cli_sandbox: CliSandbox, release_api_url: str
+) -> None:
+    """The release host is not contacted at all, so the stub is never reached.
+
+    Reported as a plain statement and exit 0, not as a failed check: a network
+    error would send an operator looking for a network problem that is not there.
+    """
     result = _run_cli(
         cli_sandbox,
         "update",
@@ -181,9 +188,8 @@ def test_quickstart_update_check_runs(cli_sandbox: CliSandbox, release_api_url: 
         extra_env={"OPENSRE_RELEASES_API_URL": release_api_url},
     )
 
-    assert result.exit_code == 1
-    assert "current:" in result.stdout
-    assert "latest:" in result.stdout
+    assert result.exit_code == 0
+    assert "does not check for releases" in result.stdout
 
 
 # ── Uninstall ────────────────────────────────────────────────────────────────

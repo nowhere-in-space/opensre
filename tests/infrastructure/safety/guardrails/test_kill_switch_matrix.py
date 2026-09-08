@@ -36,6 +36,12 @@ _ENV_VARS = (
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in _ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+    # The table below is about which env var routes to which channel. This build
+    # additionally switches both off outright, which would make every row read
+    # "disabled" and prove nothing; that switch is asserted on its own in
+    # tests/quality/test_vendor_services_are_not_contacted.py.
+    monkeypatch.setattr(provider, "VENDOR_SERVICES_ENABLED", True)
+    monkeypatch.setattr(sentry_mod, "VENDOR_SERVICES_ENABLED", True)
     sentry_mod._init_sentry_once.cache_clear()
 
 

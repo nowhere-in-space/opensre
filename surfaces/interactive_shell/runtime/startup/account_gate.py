@@ -7,6 +7,7 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
+from config.constants.vendor_services import VENDOR_SERVICES_ENABLED
 from infrastructure.analytics.source import is_test_run
 
 if TYPE_CHECKING:
@@ -50,6 +51,11 @@ def pass_sign_in_gate(console: Console) -> bool:
     on a TTY cannot hang on the Sign in/Stay signed out choice.
     """
     if is_test_run():
+        return True
+    # The gate validates the stored login against the web app on every start and
+    # counts "could not reach it" as "not signed in". In a network where that
+    # host is blocked it does not ask for a login, it withholds the shell.
+    if not VENDOR_SERVICES_ENABLED:
         return True
     from surfaces.interactive_shell.ui.sign_in import run_sign_in_gate
 

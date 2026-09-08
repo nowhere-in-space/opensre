@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from config.constants.vendor_services import VENDOR_SERVICES_ENABLED
 from config.version import get_opensre_version
 
 
@@ -86,6 +87,12 @@ def _check_buzz_cli() -> tuple[bool, str]:
 
 def _check_version_freshness() -> tuple[bool, str]:
     current = get_opensre_version()
+    # Stated before anything else so the policy does not depend on install shape:
+    # a frozen install must skip the release host for the same reason a checkout
+    # does, and one branch deciding it is easier to keep honest than two.
+    if not VENDOR_SERVICES_ENABLED:
+        return True, f"{current} (this build does not check for releases)"
+
     from infrastructure.process.release_version import (
         development_install_doctor_version_detail,
         fetch_latest_version,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from surfaces.shared import doctor_checks as doctor
 
 
@@ -298,3 +300,8 @@ def test_check_version_freshness_soft_fails_on_fetch_error(monkeypatch) -> None:
 
     assert ok is True
     assert detail == "1.2.3 (could not check: rate limited)"
+
+
+@pytest.fixture(autouse=True)
+def _vendor_services_on(vendor_services_enabled: None) -> None:
+    """This suite covers paths this build switches off; see tests/conftest.py."""

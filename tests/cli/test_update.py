@@ -332,3 +332,8 @@ def test_development_install_doctor_detail_editable_and_uv_run(
     assert detail == (
         "2026.4.5 (editable install + uv run; skipped comparing to latest main build)"
     )
+
+
+@pytest.fixture(autouse=True)
+def _vendor_services_on(vendor_services_enabled: None) -> None:
+    """This suite covers paths this build switches off; see tests/conftest.py."""

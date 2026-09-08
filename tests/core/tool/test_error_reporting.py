@@ -191,3 +191,8 @@ def test_report_run_error_uses_provided_logger(
     custom_logger.error.assert_called_once()
     assert len(captured_sentry_events) == 1
     assert captured_sentry_events[0].exc is err
+
+
+@pytest.fixture(autouse=True)
+def _vendor_services_on(vendor_services_enabled: None) -> None:
+    """This suite covers paths this build switches off; see tests/conftest.py."""

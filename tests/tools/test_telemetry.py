@@ -46,12 +46,17 @@ class CapturedSentryEvent:
 @pytest.fixture
 def captured_sentry_events(
     monkeypatch: pytest.MonkeyPatch,
+    vendor_services_enabled: None,
 ) -> Iterator[list[CapturedSentryEvent]]:
     """Patch the Sentry SDK so every capture lands in a local list.
 
     Tests rely on this rather than the real ``sentry_sdk`` because:
       * ``conftest`` sets ``OPENSRE_SENTRY_DISABLED=1`` to keep the suite
-        offline — we re-enable it here.
+        offline, and this build additionally declares itself offline through
+        ``VENDOR_SERVICES_ENABLED`` — the env vars are cleared here and the
+        build switch is lifted by ``vendor_services_enabled``. That the build
+        keeps it down otherwise is asserted in
+        ``tests/quality/test_vendor_services_are_not_contacted.py``.
       * ``capture_exception`` and ``push_scope`` both need to be present
         for the contextual-tag path inside ``infrastructure.observability.errors.sentry``.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import Iterator
 
@@ -167,3 +168,29 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         pytest.ExitCode.NO_TESTS_COLLECTED,
     ):
         session.exitstatus = pytest.ExitCode.NO_TESTS_COLLECTED
+
+
+#: Every module that reads the build's offline switch. Listed here so a suite
+#: that lifts it does not have to know which of them its code path touches.
+_VENDOR_SERVICE_READERS = (
+    "infrastructure.analytics.provider",
+    "infrastructure.observability.errors.sentry",
+    "surfaces.cli.lifecycle.update",
+    "surfaces.shared.doctor_checks",
+    "surfaces.interactive_shell.runtime.startup.account_gate",
+)
+
+
+@pytest.fixture
+def vendor_services_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lift the offline switch for suites that test what it switches off.
+
+    This build never contacts a vendor service - analytics, error reporting, the
+    account check, the release check - and that is asserted on its own in
+    ``tests/quality/test_vendor_services_are_not_contacted.py``. The suites that
+    cover how those paths behave when they do run need them switched back on,
+    and keeping the two questions apart is the point: whether the code works,
+    and whether this build lets it run.
+    """
+    for module_path in _VENDOR_SERVICE_READERS:
+        monkeypatch.setattr(importlib.import_module(module_path), "VENDOR_SERVICES_ENABLED", True)

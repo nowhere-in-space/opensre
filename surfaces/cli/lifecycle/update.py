@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from config.constants.vendor_services import VENDOR_SERVICES_ENABLED
 from config.version import get_opensre_version
 from infrastructure.process.release_version import (
     MAIN_BUILD_RELEASE_URL,
@@ -50,6 +51,12 @@ def _upgrade_via_install_script() -> int:
 def run_update(*, check_only: bool = False, yes: bool = False) -> int:
     # To skip this check in CI or automated environments, set OPENSRE_NO_UPDATE_CHECK=1.
     current = get_opensre_version()
+
+    if not VENDOR_SERVICES_ENABLED:
+        # Not an error: this build is not meant to reach the release host, and
+        # saying so beats a network failure the operator would try to fix.
+        print(f"  opensre {current}; this build does not check for releases.")
+        return 0
 
     try:
         latest = fetch_latest_version()

@@ -17,6 +17,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
     "OPENSRE_APP_URL_ENV": "account",
+    # vendor_services
+    "VENDOR_SERVICES_ENABLED": "vendor_services",
     # alertmanager
     "ALERTMANAGER_BEARER_TOKEN_ENV": "alertmanager",
     "ALERTMANAGER_PASSWORD_ENV": "alertmanager",

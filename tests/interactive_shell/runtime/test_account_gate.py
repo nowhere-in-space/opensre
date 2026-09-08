@@ -8,6 +8,7 @@ import subprocess
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
@@ -222,3 +223,8 @@ def test_run_repl_async_opens_loops_after_a_skipped_demo(monkeypatch: Any) -> No
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
     assert loops == ["opened"]
+
+
+@pytest.fixture(autouse=True)
+def _vendor_services_on(vendor_services_enabled: None) -> None:
+    """This suite covers paths this build switches off; see tests/conftest.py."""

@@ -24,6 +24,7 @@ from config.constants import (
     SENTRY_MAX_BREADCRUMBS,
     SENTRY_TRACES_SAMPLE_RATE,
 )
+from config.constants.vendor_services import VENDOR_SERVICES_ENABLED
 from infrastructure.analytics.events import Event
 
 _HOME_PATH_RE: re.Pattern[str] = re.compile(r"/(?:Users|home)/[^/\s]+")
@@ -105,6 +106,10 @@ class _ScopeTagsState:
 
 
 def _is_sentry_disabled() -> bool:
+    # Off by construction in this build. An exception report carries a stack and
+    # its locals, which is the last thing that should leave a customer network.
+    if not VENDOR_SERVICES_ENABLED:
+        return True
     return (
         os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
         or os.getenv("OPENSRE_SENTRY_DISABLED", "0") == "1"
