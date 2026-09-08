@@ -178,7 +178,8 @@ class TestManagedDatabases:
         connect = get_yc_db_cluster(cluster_id="c1", engine="postgresql", **_CREDENTIALS)["connect"]
 
         assert connect["integration"] == "postgresql"
-        assert connect["host"] == "rc1a.mdb"
+        assert connect["host"] == "c-c1.rw.mdb.yandexcloud.net"
+        assert connect["master_host"] == "rc1a.mdb"
         assert connect["port"] == 6432
         assert "CA.pem" in connect["tls"]
 
@@ -261,7 +262,7 @@ class TestHostsLiveWhereTheEngineKeepsThem:
     ) -> None:
         result = self._greenplum(monkeypatch)
 
-        assert result["connect"]["host"] == "rc1a-master.mdb"
+        assert result["connect"]["master_host"] == "rc1a-master.mdb"
 
     def test_a_failed_host_read_says_so_instead_of_reading_as_no_hosts(
         self, monkeypatch: pytest.MonkeyPatch
@@ -405,7 +406,7 @@ class TestHostRolesSurviveEngineDisagreement:
         """Not by ordering luck: a failed master-hosts read must not promote a segment."""
         result = self._greenplum_hosts(monkeypatch)
 
-        assert result["connect"]["host"] == "rc1b-master.mdb"
+        assert result["connect"]["master_host"] == "rc1b-master.mdb"
 
     def test_a_mongo_shaped_type_field_is_used_as_the_role(
         self, monkeypatch: pytest.MonkeyPatch
@@ -542,13 +543,18 @@ class TestNothingIsDroppedOffTheEndOfAPage:
 
 
 class TestTheEndpointThatSurvivesAFailover:
-    """The hint has to name the FQDN that follows the master, not one machine.
+    """``host`` has to be the name that follows the master, not one machine.
 
-    This is the failure the tests below pin: after a failover the host that was
-    master is a replica, an application still configured with its per-host name
-    keeps reading and stops writing, and the repair that suggests itself - move
-    the new master's name into the config - breaks again at the next failover.
-    A tool that answers with a single machine name is what proposes that repair.
+    After a failover the host that was master is a replica: an application still
+    configured with its per-host name keeps reading and stops writing, and the
+    repair that suggests itself - move the new master's name into the config -
+    breaks again at the next failover.
+
+    Returning both names and marking which to use was tried first and was not
+    enough. Against the live cluster an agent had the durable name in front of
+    it and recommended the machine anyway, because that one was called ``host``.
+    So the obvious field holds the right answer, and the machine - a real answer
+    to "who is master right now" - is reported beside it under its own name.
     """
 
     def _hint(
@@ -566,13 +572,14 @@ class TestTheEndpointThatSurvivesAFailover:
         )
         return get_yc_db_cluster(cluster_id="c9qexample", engine=engine, **_CREDENTIALS)["connect"]
 
-    def test_postgresql_offers_the_master_name_that_moves_with_the_role(
+    def test_the_host_to_connect_with_is_the_one_that_follows_the_role(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """``host`` is the field a reader reaches for, so it holds the right answer."""
         connect = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1")
 
-        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
-        assert connect["rw_host_resolves_to"] == "the current master"
+        assert connect["host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert connect["host_resolves_to"] == "the current master"
 
     def test_postgresql_also_offers_the_replica_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Read traffic that does not need the master belongs somewhere else."""
@@ -581,24 +588,25 @@ class TestTheEndpointThatSurvivesAFailover:
         assert connect["ro_host"] == "c-c9qexample.ro.mdb.yandexcloud.net"
         assert connect["ro_host_resolves_to"] == "the least-lagging replica"
 
-    def test_the_per_host_name_is_marked_as_one_machine(
+    def test_the_machine_is_still_reported_and_marked_as_moving(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Both names are returned, so which one to configure has to be said."""
+        """Which machine is master now is a real answer to a different question."""
         connect = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1")
 
-        assert connect["host"] == "rc1a.mdb"
-        assert "rw_host" in connect["host_is_one_machine"]
+        assert connect["master_host"] == "rc1a.mdb"
+        assert "failover" in connect["master_host_note"]
+        assert "host" in connect["master_host_note"]
 
-    def test_the_stable_name_does_not_follow_whichever_host_is_master(
+    def test_a_failover_moves_the_machine_and_not_the_host(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The point of the name: a failover changes ``host`` and not ``rw_host``."""
+        """The whole point: the field to configure survives what the incident changed."""
         before = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1", "rc1a.mdb")
         after = self._hint(monkeypatch, "postgresql", "/managed-postgresql/v1", "rc1b.mdb")
 
-        assert before["host"] != after["host"]
-        assert before["rw_host"] == after["rw_host"]
+        assert before["master_host"] != after["master_host"]
+        assert before["host"] == after["host"]
 
     def test_mpp_analytics_has_a_master_name_and_no_replica_name(
         self, monkeypatch: pytest.MonkeyPatch
@@ -606,8 +614,8 @@ class TestTheEndpointThatSurvivesAFailover:
         """Greenplum publishes the master FQDN only; claiming a replica one would 404."""
         connect = self._hint(monkeypatch, "greenplum", "/managed-greenplum/v1")
 
-        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
-        assert connect["rw_host_resolves_to"] == "the primary master"
+        assert connect["host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert connect["host_resolves_to"] == "the primary master"
         assert "ro_host" not in connect
 
     def test_clickhouse_is_not_described_as_having_a_master(
@@ -616,8 +624,8 @@ class TestTheEndpointThatSurvivesAFailover:
         """The same FQDN shape means something else here, and saying 'master' would mislead."""
         connect = self._hint(monkeypatch, "clickhouse", "/managed-clickhouse/v1")
 
-        assert connect["rw_host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
-        assert "master" not in connect["rw_host_resolves_to"]
+        assert connect["host"] == "c-c9qexample.rw.mdb.yandexcloud.net"
+        assert "master" not in connect["host_resolves_to"]
 
     @pytest.mark.parametrize(
         ("engine", "prefix"),
@@ -638,8 +646,9 @@ class TestTheEndpointThatSurvivesAFailover:
         """
         connect = self._hint(monkeypatch, engine, prefix)
 
-        assert "rw_host" not in connect
-        assert "host_is_one_machine" not in connect
+        assert connect["host"] == "rc1a.mdb"
+        assert "host_resolves_to" not in connect
+        assert "master_host" not in connect
 
     def test_no_engine_claims_a_replica_name_without_a_master_one(self) -> None:
         """The catalog is written by hand; ``ro`` without ``rw`` would be a typo."""

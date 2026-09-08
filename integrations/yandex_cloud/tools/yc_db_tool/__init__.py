@@ -97,9 +97,10 @@ def _connection_hint(
         (host for host in hosts if str(host.get("role", "")).upper() in {"MASTER", "PRIMARY"}),
         hosts[0] if hosts else None,
     )
+    machine = primary["name"] if primary else ""
     hint: dict[str, Any] = {
         "integration": engine.integration,
-        "host": primary["name"] if primary else "",
+        "host": machine,
         "port": engine.port,
         "port_is_tls": True,
         "tls": (
@@ -111,28 +112,42 @@ def _connection_hint(
         # Handing over the wrong one of the two produces a connection timeout,
         # which reads exactly like the database being down.
         hint["port_without_tls"] = engine.plaintext_port
-    hint.update(_stable_names(engine, cluster_id))
+    hint.update(_role_following_names(engine, cluster_id, machine))
     return hint
 
 
-#: Said next to ``host`` because the reasonable-looking repair after a failover -
-#: put the new master's name where the old one was - fails again at the next one,
-#: and a tool that hands back a single machine name invites exactly that.
-_HOST_IS_ONE_MACHINE = (
-    "host names one machine, and which machine holds the role changes. "
-    "Configuration meant to outlive an incident should carry rw_host."
+#: Said next to the machine name because the reasonable-looking repair after a
+#: failover - put the new master's name where the old one was - fails again at
+#: the next one.
+_MASTER_HOST_MOVES = (
+    "which machine holds the role right now, and it changes on a failover. "
+    "Configuration should carry host instead."
 )
 
 
-def _stable_names(engine: ManagedDatabase, cluster_id: str) -> dict[str, str]:
-    """Return the FQDNs that follow a role rather than a machine."""
-    if not cluster_id:
+def _role_following_names(engine: ManagedDatabase, cluster_id: str, machine: str) -> dict[str, str]:
+    """Put the name that follows the role where the obvious answer is looked for.
+
+    ``host`` is the field a reader reaches for first, so for an engine that
+    publishes the special FQDN it holds that, and the machine currently holding
+    the role moves to ``master_host``. Offering the machine name as ``host`` and
+    the durable one beside it was tried, and read exactly the wrong way round:
+    with both in front of it, an agent recommended pinning the config to the
+    machine - the failure this whole field exists to prevent. Grabbing the
+    obvious field and answering correctly should be the same act.
+
+    Engines with no such FQDN - Kafka, StoreDoc, Sharded PostgreSQL - keep the
+    machine in ``host``, because there it is the only answer there is.
+    """
+    if not cluster_id or not engine.rw_fqdn_resolves_to:
         return {}
-    names: dict[str, str] = {}
-    if engine.rw_fqdn_resolves_to:
-        names["rw_host"] = f"c-{cluster_id}.rw.{MDB_DNS_ZONE}"
-        names["rw_host_resolves_to"] = engine.rw_fqdn_resolves_to
-        names["host_is_one_machine"] = _HOST_IS_ONE_MACHINE
+    names = {
+        "host": f"c-{cluster_id}.rw.{MDB_DNS_ZONE}",
+        "host_resolves_to": engine.rw_fqdn_resolves_to,
+    }
+    if machine:
+        names["master_host"] = machine
+        names["master_host_note"] = _MASTER_HOST_MOVES
     if engine.ro_fqdn_resolves_to:
         names["ro_host"] = f"c-{cluster_id}.ro.{MDB_DNS_ZONE}"
         names["ro_host_resolves_to"] = engine.ro_fqdn_resolves_to
@@ -404,8 +419,8 @@ def list_yc_db_clusters(
         "hosts": "each host with role, zone, and health",
         "recent_operations": "the most recent operations, newest first",
         "connect": (
-            "which integration, host, and port reach the data plane, and the "
-            "FQDN that follows the master instead of naming one machine"
+            "which integration, host, and port reach the data plane; host is the "
+            "FQDN that follows the master rather than the machine holding it now"
         ),
     },
     input_schema={
