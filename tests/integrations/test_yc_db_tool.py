@@ -657,3 +657,47 @@ class TestTheEndpointThatSurvivesAFailover:
         for engine in ENGINES:
             if engine.ro_fqdn_resolves_to:
                 assert engine.rw_fqdn_resolves_to, engine.key
+
+
+class TestTheTlsNoteDoesNotReadAsAFault:
+    """``port_is_tls`` next to a bare TLS sentence was read as "TLS or nothing".
+
+    An agent looking at an application configured with sslmode=disable took that
+    combination as the cause of failing writes and reported a TLS mismatch -
+    against an application that was reading over the very connection it called
+    broken, which is only possible if the connection is fine. The sentence now
+    says what is true: on the cluster's own network, connecting without TLS is
+    ordinary.
+    """
+
+    def _hint(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        monkeypatch.setattr(
+            "integrations.yandex_cloud.rest_client.send_request",
+            _responder(
+                {
+                    "/hosts": {
+                        "hosts": [{"name": "rc1a.mdb", "role": "MASTER", "health": "ALIVE"}]
+                    },
+                    "/operations": {"operations": []},
+                    "/managed-postgresql/v1/clusters/c1": {"id": "c1", "status": "RUNNING"},
+                }
+            ),
+        )
+        return get_yc_db_cluster(cluster_id="c1", engine="postgresql", **_CREDENTIALS)["connect"]
+
+    def test_connecting_without_tls_is_named_as_ordinary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        connect = self._hint(monkeypatch)
+
+        assert "sslmode=disable" in connect["tls"]
+        assert "not by itself a fault" in connect["tls"]
+
+    def test_the_certificate_is_still_offered_for_the_public_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A public host does need the private CA, and that must survive the softening."""
+        connect = self._hint(monkeypatch)
+
+        assert connect["port_is_tls"] is True
+        assert "CA.pem" in connect["tls"]

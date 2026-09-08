@@ -105,7 +105,9 @@ def _connection_hint(
         "port_is_tls": True,
         "tls": (
             "Public hosts require TLS against Yandex's private CA, which is in no "
-            f"system trust store. Fetch it from {CA_CERTIFICATE_URL}."
+            f"system trust store. Fetch it from {CA_CERTIFICATE_URL}. A client on "
+            "the cluster's own network may connect without it, so sslmode=disable "
+            "is a normal setting there and not by itself a fault."
         ),
     }
     if engine.plaintext_port is not None:
